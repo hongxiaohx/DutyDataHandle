@@ -1,0 +1,183 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ConsoleApplication2
+{
+    class DutyHandle
+    {
+        public static Duty handle( List<Nullable<DateTime>> card,DutyClass dutyClass,Ruler ruler)
+        {
+            Duty duty = new Duty();
+            //将时间加入到list
+            List<DateTime?> dateTimeList = new List<DateTime?>();
+            foreach(var item in card)
+            {
+                dateTimeList.Add(item);
+            }
+            dateTimeList.Add(dutyClass.OnTime1);
+            dateTimeList.Add(dutyClass.OnTime2);
+            dateTimeList.Add(dutyClass.OnTime3);
+            dateTimeList.Add(dutyClass.OffTime1);
+            dateTimeList.Add(dutyClass.OffTime2);
+            dateTimeList.Add(dutyClass.OffTime3);
+            //list排序
+            dateTimeList.Sort();
+            int on1=-1, off1=-1, on2 = -1, off2 = -1, on3 = -1, off3 = -1;
+            //定位ontime,offtime的位置
+            for(int i=0;i<dateTimeList.Count();i++)
+            {
+                if(dateTimeList[i]==dutyClass.OnTime1&&on1==-1)
+                {
+                    on1 = i;
+                }
+                if (dateTimeList[i] == dutyClass.OnTime2 && on2 == -1)
+                {
+                    on2 = i;
+                }
+                if (dateTimeList[i] == dutyClass.OnTime3 && on3 == -1)
+                {
+                    on3 = i;
+                }
+                if (dateTimeList[i] == dutyClass.OffTime1 && off1 == -1)
+                {
+                    off1 = i;
+                }
+                if (dateTimeList[i] == dutyClass.OffTime2 && off2 == -1)
+                {
+                    off2 = i;
+                }
+                if (dateTimeList[i] == dutyClass.OffTime3 && off3 == -1)
+                {
+                    off3 = i;
+                }
+            }
+            ////确定On,off的时间
+            //上班前打卡
+            if(on1>0&&dateTimeList[on1-1]!=null)
+            {
+                //判断是否打卡太早了
+                TimeSpan t1 =(TimeSpan)(dutyClass.OnTime1 - dateTimeList[on1 - 1]);
+                if(t1.TotalMinutes<=ruler.onDutyBeforeMinute)
+                {
+                    duty.onTime = dateTimeList[on1 - 1];
+                }
+            }else
+            {
+                //上班时间不是下班时间
+                if ((on1 + 1) != off1)
+                {
+                    duty.onTime = dateTimeList[on1 + 1];
+                    TimeSpan t1 = (TimeSpan)(dateTimeList[on1 + 1]-dutyClass.OnTime1);
+                    // 判断迟到
+                    if (t1.TotalMinutes > ruler.laterMinute)
+                    {
+                        duty.lateMinute = t1.TotalMinutes;
+                    }
+                }
+            }
+
+            //下班后打卡
+            if (off1>0&&(off1+1)<dateTimeList.Count())
+            {
+                //判断下班卡是否打太晚了
+                TimeSpan t1 = (TimeSpan)(dateTimeList[off1+1]-dutyClass.OffTime1);
+                if (t1.TotalMinutes<= ruler.offDutyAfterMinute)
+                {
+                    duty.offTime = dateTimeList[off1 + 1];
+                }
+            }
+            else
+            {
+                //下班时间不是上班时间
+                if ((off1-1) != on1&&dateTimeList[off1-1]!=duty.onTime)
+                {
+                    duty.offTime = dateTimeList[off1 - 1];
+                    TimeSpan t1 = (TimeSpan)(dutyClass.OffTime1-duty.offTime);
+                    // 判断早退
+                    if (t1.TotalMinutes > ruler.leaveMinute)
+                    {
+                        duty.leaveMinute = t1.TotalMinutes;
+                    }
+                }
+            }
+            //应上班，应加班
+            duty.mustDutyHour = dutyClass.mustDayHour;
+            duty.mustOTHour = dutyClass.mustOTHour;
+            //实上班，实加班
+            if (duty.offTime != null && duty.onTime != null)
+            {
+                TimeSpan t = new TimeSpan();
+                //又迟到，又早退，按实际的打卡计算时间
+                if (duty.lateMinute > 0 && duty.leaveMinute > 0)
+                {
+                     t = (TimeSpan)(duty.offTime - duty.onTime);
+                }
+                //只迟到没有早退
+                else if(duty.lateMinute > 0 && duty.leaveMinute== 0)
+                {
+                    t = (TimeSpan)(dutyClass.OffTime1 - duty.onTime);
+                }
+                //没迟到，但早退
+                else if (duty.lateMinute == 0 && duty.leaveMinute > 0)
+                {
+                    t = (TimeSpan)(duty.offTime - dutyClass.OnTime1);
+                }
+                //没迟到，没早退。按班次时间算
+                else if (duty.lateMinute == 0 && duty.leaveMinute == 0)
+                {
+                    t = (TimeSpan)(dutyClass.OffTime1 - dutyClass.OnTime1);
+                }
+                //获取实际的上班小时数
+                double totalHour = t.TotalHours;
+                //上班小时数大于等于班次的小时，直接让其等于班次的正班和加班小时数
+                if (totalHour >= dutyClass.mustDayHour + dutyClass.mustOTHour + dutyClass.restHour)
+                {
+                    duty.factDutyHour = dutyClass.mustDayHour;
+                    duty.factOTHour = dutyClass.mustOTHour;
+                }
+                //上班小时数大于班次的正班小时数+休息小时数
+                else if (totalHour >= dutyClass.mustDayHour + dutyClass.restHour)
+                {
+                    duty.factDutyHour = dutyClass.mustDayHour;
+                    
+                    duty.factOTHour = totalHour - (dutyClass.mustDayHour + dutyClass.restHour);
+                    
+                }
+                //没有早退，有打下班卡，直接计算加班，正班时间扣除加班时间
+                else if(duty.leaveMinute==0)
+                {
+                    duty.factDutyHour = totalHour-dutyClass.mustOTHour;
+                    if(totalHour>dutyClass.mustDayHour/2)
+                    {
+                        duty.factDutyHour = totalHour - dutyClass.mustOTHour-dutyClass.restHour;
+                    }
+                    duty.factOTHour =dutyClass.mustOTHour;
+                }
+                //否则，正班时间等于实际上班小时数
+                else
+                {
+                    duty.factDutyHour = totalHour;
+                    //如果实际正班小时数大于必须正班小时数，则正班扣除休息小时数
+                    if (totalHour > dutyClass.mustDayHour / 2)
+                    {
+                        
+                        duty.factDutyHour = totalHour-dutyClass.restHour;
+                    }  
+                    duty.factOTHour = 0;
+                }
+                if (duty.factDutyHour < 0)
+                {
+                    duty.factDutyHour = 0;
+                }
+                if (duty.factOTHour < 0)
+                {
+                    duty.factOTHour = 0;
+                }
+            }
+            return duty;
+        }
+    }
+}
